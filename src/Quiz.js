@@ -7,6 +7,8 @@ const PAGE_SIZE = 10;
 const GROUP_SIZE = 50;
 const EXAM_QUESTION_COUNT = 40;
 const EXAM_TIME = 20 * 60; // 20 phút (giây)
+const PRACTICE_QUESTION_COUNT = 40;
+const PRACTICE_TIME = 20 * 60; // 20 phút (giây)
 
 function shuffleArray(array) {
   const arr = array.slice();
@@ -96,6 +98,11 @@ function Quiz() {
   const timerRef = useRef();
   const [translating, setTranslating] = useState({});
   const [translations, setTranslations] = useState({});
+  const [isPractice, setIsPractice] = useState(false);
+  const [practiceTimeLeft, setPracticeTimeLeft] = useState(PRACTICE_TIME);
+  const [practiceStarted, setPracticeStarted] = useState(false);
+  const [practiceSubmitted, setPracticeSubmitted] = useState(false);
+  const practiceTimerRef = useRef();
 
   useEffect(() => {
     async function fetchQuestions() {
@@ -132,12 +139,24 @@ function Quiz() {
       setPage(0);
       setAnswers({});
       setShowResult({});
+    } else if (mode === "practice") {
+      const shuffled = shuffleArray(questions).slice(0, PRACTICE_QUESTION_COUNT);
+      setQuizQuestions(shuffled);
+      setIsExam(false);
+      setIsPractice(true);
+      setPracticeTimeLeft(PRACTICE_TIME);
+      setPracticeStarted(true);
+      setPracticeSubmitted(false);
+      setPage(0);
+      setAnswers({});
+      setShowResult({});
     } else {
       const selected = questions.slice(mode.start, mode.end);
       setQuizQuestions(selected);
       setIsExam(false);
-      setExamStarted(false);
-      setExamSubmitted(false);
+      setIsPractice(false);
+      setPracticeStarted(false);
+      setPracticeSubmitted(false);
       setPage(0);
       setAnswers({});
       setShowResult({});
@@ -163,6 +182,21 @@ function Quiz() {
   }, [isExam, examStarted, examSubmitted, quizQuestions.length]);
 
   useEffect(() => {
+    if (!isPractice || !practiceStarted || practiceSubmitted) return;
+    practiceTimerRef.current = setInterval(() => {
+      setPracticeTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(practiceTimerRef.current);
+          setPracticeSubmitted(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(practiceTimerRef.current);
+  }, [isPractice, practiceStarted, practiceSubmitted, quizQuestions.length]);
+
+  useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [page]);
 
@@ -186,6 +220,11 @@ function Quiz() {
     clearInterval(timerRef.current);
   };
 
+  const handlePracticeSubmit = () => {
+    setPracticeSubmitted(true);
+    clearInterval(practiceTimerRef.current);
+  };
+
   const formatTime = (sec) => {
     const m = Math.floor(sec / 60).toString().padStart(2, "0");
     const s = (sec % 60).toString().padStart(2, "0");
@@ -204,7 +243,7 @@ function Quiz() {
   if (!mode) {
     return (
       <div className="quiz-form" style={{ textAlign: "center" }}>
-        <h2>Chọn gói câu hỏi (50 câu/gói hoặc Exam)</h2>
+        <h2>Chọn gói câu hỏi (50 câu/gói hoặc Exam/Practice)</h2>
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 16, margin: "24px 0" }}>
           <button
             className="submit-btn"
@@ -212,6 +251,13 @@ function Quiz() {
             onClick={() => setMode("exam")}
           >
             Exam (40 câu/20 phút)
+          </button>
+          <button
+            className="submit-btn"
+            style={{ minWidth: 180, background: '#388e3c', color: '#fff', fontWeight: 700 }}
+            onClick={() => setMode("practice")}
+          >
+            Practice (40 câu/20 phút)
           </button>
           {modes.map((m, idx) => (
             <button
@@ -259,6 +305,23 @@ function Quiz() {
                 className="submit-btn"
                 style={{ marginLeft: 24, background: '#1976d2', color: '#fff' }}
                 onClick={handleExamSubmit}
+                type="button"
+              >
+                Nộp bài
+              </button>
+            )}
+          </div>
+        )}
+        {isPractice && (
+          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+            <span style={{ fontWeight: 600, color: practiceTimeLeft <= 60 ? '#388e3c' : '#1976d2', fontSize: 20 }}>
+              ⏰ Thời gian còn lại: {formatTime(practiceTimeLeft)}
+            </span>
+            {!practiceSubmitted && (
+              <button
+                className="submit-btn"
+                style={{ marginLeft: 24, background: '#388e3c', color: '#fff' }}
+                onClick={handlePracticeSubmit}
                 type="button"
               >
                 Nộp bài
@@ -316,7 +379,7 @@ function Quiz() {
                 {["A", "B", "C", "D"].map((opt) => {
                   const optKey = `${qKey}_${opt}`;
                   let optionClass = "option-label";
-                  if (showResult[globalIdx]) {
+                  if (showResult[globalIdx] || (isPractice && !practiceSubmitted && answers[globalIdx])) {
                     if (q["Đáp án đúng"] === opt) {
                       optionClass += " correct";
                     } else if (answers[globalIdx] === opt) {
@@ -333,7 +396,7 @@ function Quiz() {
                         value={opt}
                         checked={answers[globalIdx] === opt}
                         onChange={() => handleChange(globalIdx, opt)}
-                        disabled={isExam ? examSubmitted : showResult[globalIdx]}
+                        disabled={isExam ? examSubmitted : (isPractice ? practiceSubmitted : showResult[globalIdx])}
                       />
                       <span className="option-letter">{opt}.</span>
                       {isCode(q[opt]) ? (
@@ -359,7 +422,7 @@ function Quiz() {
                   );
                 })}
               </div>
-              {((!isExam && showResult[globalIdx]) || (isExam && examSubmitted && showResult[globalIdx])) && (
+              {((!isExam && !isPractice && showResult[globalIdx]) || (isExam && examSubmitted && showResult[globalIdx]) || (isPractice && (practiceSubmitted || answers[globalIdx])) ) && (
                 <div className="result-inline">
                   {answers[globalIdx] === q["Đáp án đúng"] ? (
                     <span className="result-correct">✔ Đúng</span>
