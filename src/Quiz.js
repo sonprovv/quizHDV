@@ -4,11 +4,7 @@ import { db } from "./firebase";
 import "./App.css";
 
 const PAGE_SIZE = 10;
-const MODES = [
-  { label: "40 câu", value: 40 },
-  { label: "100 câu", value: 100 },
-  { label: "Full", value: "full" },
-];
+const GROUP_SIZE = 50;
 
 function Quiz() {
   const [questions, setQuestions] = useState([]);
@@ -17,6 +13,7 @@ function Quiz() {
   const [page, setPage] = useState(0);
   const [mode, setMode] = useState(null); // Gói câu hỏi
   const [quizQuestions, setQuizQuestions] = useState([]); // Câu hỏi thực sự dùng cho quiz
+  const [modes, setModes] = useState([]); // Danh sách các gói 50 câu
 
   useEffect(() => {
     async function fetchQuestions() {
@@ -28,6 +25,17 @@ function Quiz() {
       // Sắp xếp theo số câu nếu có
       data.sort((a, b) => (a["Câu số"] || 0) - (b["Câu số"] || 0));
       setQuestions(data);
+      // Tạo các gói 50 câu
+      const groupCount = Math.ceil(data.length / GROUP_SIZE);
+      const groupModes = Array.from({ length: groupCount }, (_, i) => {
+        const start = i * GROUP_SIZE + 1;
+        const end = Math.min((i + 1) * GROUP_SIZE, data.length);
+        return {
+          label: `Câu ${start}-${end}`,
+          value: { start: start - 1, end: end },
+        };
+      });
+      setModes(groupModes);
     }
     fetchQuestions();
   }, []);
@@ -35,9 +43,7 @@ function Quiz() {
   // Khi chọn mode, lấy số lượng câu hỏi tương ứng
   useEffect(() => {
     if (!mode || questions.length === 0) return;
-    let selected = [];
-    if (mode === "full") selected = questions;
-    else selected = questions.slice(0, mode);
+    const selected = questions.slice(mode.start, mode.end);
     setQuizQuestions(selected);
     setPage(0);
     setAnswers({});
@@ -60,13 +66,13 @@ function Quiz() {
   if (!mode) {
     return (
       <div className="quiz-form" style={{ textAlign: "center" }}>
-        <h2>Chọn gói câu hỏi</h2>
-        <div style={{ display: "flex", justifyContent: "center", gap: 24, margin: "24px 0" }}>
-          {MODES.map((m) => (
+        <h2>Chọn gói câu hỏi (50 câu/gói)</h2>
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 16, margin: "24px 0" }}>
+          {modes.map((m, idx) => (
             <button
-              key={m.value}
+              key={m.label}
               className="submit-btn"
-              style={{ minWidth: 100 }}
+              style={{ minWidth: 120 }}
               onClick={() => setMode(m.value)}
             >
               {m.label}
