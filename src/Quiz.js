@@ -4,12 +4,19 @@ import { db } from "./firebase";
 import "./App.css";
 
 const PAGE_SIZE = 10;
+const MODES = [
+  { label: "40 câu", value: 40 },
+  { label: "100 câu", value: 100 },
+  { label: "Full", value: "full" },
+];
 
 function Quiz() {
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
   const [showResult, setShowResult] = useState({}); // Lưu trạng thái hiển thị đáp án từng câu
   const [page, setPage] = useState(0);
+  const [mode, setMode] = useState(null); // Gói câu hỏi
+  const [quizQuestions, setQuizQuestions] = useState([]); // Câu hỏi thực sự dùng cho quiz
 
   useEffect(() => {
     async function fetchQuestions() {
@@ -25,21 +32,72 @@ function Quiz() {
     fetchQuestions();
   }, []);
 
+  // Khi chọn mode, lấy số lượng câu hỏi tương ứng
+  useEffect(() => {
+    if (!mode || questions.length === 0) return;
+    let selected = [];
+    if (mode === "full") selected = questions;
+    else selected = questions.slice(0, mode);
+    setQuizQuestions(selected);
+    setPage(0);
+    setAnswers({});
+    setShowResult({});
+  }, [mode, questions]);
+
   const handleChange = (qIndex, value) => {
     setAnswers({ ...answers, [qIndex]: value });
     setShowResult({ ...showResult, [qIndex]: true });
   };
 
-  const totalPages = Math.ceil(questions.length / PAGE_SIZE);
-  const startIdx = page * PAGE_SIZE;
-  const endIdx = Math.min(startIdx + PAGE_SIZE, questions.length);
-  const currentQuestions = questions.slice(startIdx, endIdx);
+  // Đếm số câu đúng đã trả lời
+  const correctCount = quizQuestions.reduce((acc, q, idx) => {
+    if (answers[idx] && answers[idx] === q["Đáp án đúng"]) return acc + 1;
+    return acc;
+  }, 0);
 
   if (questions.length === 0) return <div className="loading">Đang tải câu hỏi...</div>;
+
+  if (!mode) {
+    return (
+      <div className="quiz-form" style={{ textAlign: "center" }}>
+        <h2>Chọn gói câu hỏi</h2>
+        <div style={{ display: "flex", justifyContent: "center", gap: 24, margin: "24px 0" }}>
+          {MODES.map((m) => (
+            <button
+              key={m.value}
+              className="submit-btn"
+              style={{ minWidth: 100 }}
+              onClick={() => setMode(m.value)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const totalPages = Math.ceil(quizQuestions.length / PAGE_SIZE);
+  const startIdx = page * PAGE_SIZE;
+  const endIdx = Math.min(startIdx + PAGE_SIZE, quizQuestions.length);
+  const currentQuestions = quizQuestions.slice(startIdx, endIdx);
 
   return (
     <div>
       <form className="quiz-form" onSubmit={e => e.preventDefault()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <button
+            type="button"
+            className="submit-btn"
+            style={{ background: "#888", marginRight: 8 }}
+            onClick={() => setMode(null)}
+          >
+            ← Chọn lại gói
+          </button>
+          <div className="result" style={{ margin: 0, color: '#1976d2', fontSize: 18 }}>
+            Đúng {correctCount}/{quizQuestions.length} câu
+          </div>
+        </div>
         {currentQuestions.map((q, idx) => {
           const globalIdx = startIdx + idx;
           return (
@@ -51,8 +109,11 @@ function Quiz() {
                 {["A", "B", "C", "D"].map((opt) => {
                   let optionClass = "option-label";
                   if (showResult[globalIdx]) {
-                    if (q["Đáp án đúng"] === opt) optionClass += " correct";
-                    else if (answers[globalIdx] === opt) optionClass += " wrong";
+                    if (q["Đáp án đúng"] === opt) {
+                      optionClass += " correct";
+                    } else if (answers[globalIdx] === opt) {
+                      optionClass += " wrong";
+                    }
                   } else if (answers[globalIdx] === opt) {
                     optionClass += " selected";
                   }
