@@ -17,13 +17,12 @@ function shuffleArray(array) {
   return arr;
 }
 
-// Phát hiện tiếng Anh đơn giản: nhiều ký tự alphabet, không dấu, nhiều từ tiếng Anh phổ biến
+// Phát hiện tiếng Anh đơn giản
 function isEnglish(text) {
   if (!text) return false;
-  // Nếu có nhiều hơn 60% ký tự là alphabet không dấu, hoặc có nhiều từ tiếng Anh phổ biến
   const alphabet = text.replace(/[^a-zA-Z]/g, "");
   if (alphabet.length / text.length > 0.6) return true;
-  const commonWords = ["the", "and", "is", "are", "of", "to", "in", "that", "with", "for", "on", "as", "by", "an", "be", "at", "from", "or", "this", "which", "but", "not", "it", "was", "can", "has", "have", "will", "if", "all", "one", "about", "more", "when", "so", "no", "do", "out", "up", "what", "who", "how", "where", "why", "your", "their", "our", "my", "me", "you", "they", "we", "he", "she", "his", "her", "them", "us", "i"]; 
+  const commonWords = ["the", "and", "is", "are", "of", "to", "in", "that", "with", "for", "on", "as", "by", "an", "be", "at", "from", "or", "this", "which", "but", "not", "it", "was", "can", "has", "have", "will", "if", "all", "one", "about", "more", "when", "so", "no", "do", "out", "up", "what", "who", "how", "where", "why", "your", "their", "our", "my", "me", "you", "they", "we", "he", "she", "his", "her", "them", "us", "i"];
   const lower = text.toLowerCase();
   let count = 0;
   for (const w of commonWords) if (lower.includes(" " + w + " ")) count++;
@@ -31,7 +30,7 @@ function isEnglish(text) {
   return false;
 }
 
-// Hàm dịch sử dụng Google Translate web (bằng fetch tới API không chính thức)
+// Hàm dịch sử dụng Google Translate web
 async function translateText(text) {
   const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=vi&dt=t&q=${encodeURIComponent(text)}`;
   const res = await fetch(url);
@@ -39,21 +38,64 @@ async function translateText(text) {
   return data[0].map((item) => item[0]).join("");
 }
 
+function isXML(text) {
+  if (!text) return false;
+  return text.trim().startsWith('<') && text.trim().endsWith('>');
+}
+
+function formatXML(xml) {
+  if (!xml) return '';
+  const formatted = xml.replace(/></g, '>\n<');
+  let pad = 0;
+  return formatted.split('\n').map(line => {
+    if (line.match(/^<\//)) pad -= 2;
+    const indent = ' '.repeat(Math.max(pad, 0));
+    if (line.match(/^<[^!?/][^>]*[^/]?>$/) && !line.match(/<.*>.*<.*>/)) pad += 2;
+    return indent + line;
+  }).join('\n');
+}
+
+function isCode(text) {
+  if (!text) return false;
+  const trimmed = text.trim();
+  if (trimmed.startsWith('<') && trimmed.endsWith('>')) return true;
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) return true;
+  const codeKeywords = [
+    'public class', 'private class', 'protected class', 'class ', 'public ', 'private ', 'protected ',
+    '@GET', '@POST', '@PUT', '@DELETE', '@Path', '@Produces', '@Consumes', 'Response ', 'void ', 'int ', 'String ', 'function ', 'def ', 'return ', 'static ', 'final ', 'import ', 'package ', 'extends ', 'implements ', '=>', 'console.log', 'System.out', 'if(', 'else', 'try', 'catch', 'finally', 'new '
+  ];
+  const lower = trimmed.toLowerCase();
+  for (const kw of codeKeywords) if (trimmed.includes(kw) || lower.includes(kw.toLowerCase())) return true;
+  return false;
+}
+
+function formatCode(code) {
+  if (!code) return '';
+  if (code.trim().startsWith('<') && code.trim().endsWith('>')) {
+    return formatXML(code);
+  }
+  try {
+    if ((code.trim().startsWith('{') && code.trim().endsWith('}')) || (code.trim().startsWith('[') && code.trim().endsWith(']')))
+      return JSON.stringify(JSON.parse(code), null, 2);
+  } catch {}
+  return code.replace(/;/g, ';\n').replace(/(public |private |protected |@GET|@POST|@PUT|@DELETE|@Path|@Produces|@Consumes)/g, '\n$1');
+}
+
 function Quiz() {
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
   const [showResult, setShowResult] = useState({});
   const [page, setPage] = useState(0);
-  const [mode, setMode] = useState(null); // Gói câu hỏi
-  const [quizQuestions, setQuizQuestions] = useState([]); // Câu hỏi thực sự dùng cho quiz
-  const [modes, setModes] = useState([]); // Danh sách các gói 50 câu
+  const [mode, setMode] = useState(null);
+  const [quizQuestions, setQuizQuestions] = useState([]);
+  const [modes, setModes] = useState([]);
   const [isExam, setIsExam] = useState(false);
   const [examTimeLeft, setExamTimeLeft] = useState(EXAM_TIME);
   const [examStarted, setExamStarted] = useState(false);
   const [examSubmitted, setExamSubmitted] = useState(false);
   const timerRef = useRef();
-  const [translating, setTranslating] = useState({}); // trạng thái đang dịch
-  const [translations, setTranslations] = useState({}); // lưu bản dịch
+  const [translating, setTranslating] = useState({});
+  const [translations, setTranslations] = useState({});
 
   useEffect(() => {
     async function fetchQuestions() {
@@ -62,10 +104,8 @@ function Quiz() {
       querySnapshot.forEach((doc) => {
         data.push({ id: doc.id, ...doc.data() });
       });
-      // Sắp xếp theo số câu nếu có
       data.sort((a, b) => (a["Câu số"] || 0) - (b["Câu số"] || 0));
       setQuestions(data);
-      // Tạo các gói 50 câu
       const groupCount = Math.ceil(data.length / GROUP_SIZE);
       const groupModes = Array.from({ length: groupCount }, (_, i) => {
         const start = i * GROUP_SIZE + 1;
@@ -80,11 +120,9 @@ function Quiz() {
     fetchQuestions();
   }, []);
 
-  // Khi chọn mode, lấy số lượng câu hỏi tương ứng
   useEffect(() => {
     if (!mode || questions.length === 0) return;
     if (mode === "exam") {
-      // Lấy 40 câu ngẫu nhiên cho exam
       const shuffled = shuffleArray(questions).slice(0, EXAM_QUESTION_COUNT);
       setQuizQuestions(shuffled);
       setIsExam(true);
@@ -106,7 +144,6 @@ function Quiz() {
     }
   }, [mode, questions]);
 
-  // Đếm ngược thời gian exam
   useEffect(() => {
     if (!isExam || !examStarted || examSubmitted) return;
     timerRef.current = setInterval(() => {
@@ -114,7 +151,6 @@ function Quiz() {
         if (prev <= 1) {
           clearInterval(timerRef.current);
           setExamSubmitted(true);
-          // Hiện đáp án đúng/sai từng câu
           const newShowResult = {};
           for (let i = 0; i < quizQuestions.length; i++) newShowResult[i] = true;
           setShowResult(newShowResult);
@@ -124,10 +160,8 @@ function Quiz() {
       });
     }, 1000);
     return () => clearInterval(timerRef.current);
-    // eslint-disable-next-line
   }, [isExam, examStarted, examSubmitted, quizQuestions.length]);
 
-  // Cuộn lên đầu trang khi chuyển trang
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [page]);
@@ -139,30 +173,25 @@ function Quiz() {
     }
   };
 
-  // Đếm số câu đúng đã trả lời
   const correctCount = quizQuestions.reduce((acc, q, idx) => {
     if (answers[idx] && answers[idx] === q["Đáp án đúng"]) return acc + 1;
     return acc;
   }, 0);
 
-  // Nộp bài exam
   const handleExamSubmit = () => {
     setExamSubmitted(true);
-    // Hiện đáp án đúng/sai từng câu
     const newShowResult = {};
     for (let i = 0; i < quizQuestions.length; i++) newShowResult[i] = true;
     setShowResult(newShowResult);
     clearInterval(timerRef.current);
   };
 
-  // Hiển thị thời gian dạng mm:ss
   const formatTime = (sec) => {
     const m = Math.floor(sec / 60).toString().padStart(2, "0");
     const s = (sec % 60).toString().padStart(2, "0");
     return `${m}:${s}`;
   };
 
-  // Hàm xử lý dịch câu hỏi/đáp án
   const handleTranslate = async (key, text) => {
     setTranslating((prev) => ({ ...prev, [key]: true }));
     const translated = await translateText(text);
@@ -240,17 +269,41 @@ function Quiz() {
         {currentQuestions.map((q, idx) => {
           const globalIdx = startIdx + idx;
           const qKey = `q_${globalIdx}`;
+          // Split question into code and text parts
+          let questionContent = q["Câu hỏi"];
+          let codeContent = '';
+          let textContent = '';
+          if (isXML(questionContent)) {
+            // Extract XML part (assuming XML is at the start)
+            const xmlMatch = questionContent.match(/^(<[\s\S]*?>)([\s\S]*)$/);
+            if (xmlMatch) {
+              codeContent = formatXML(xmlMatch[1]);
+              textContent = xmlMatch[2].trim();
+            } else {
+              codeContent = formatXML(questionContent);
+            }
+          } else if (isCode(questionContent)) {
+            codeContent = formatCode(questionContent);
+          } else {
+            textContent = questionContent;
+          }
           return (
             <div key={q.id} className="question-block">
               <div className="question-title">
-                <span className="question-number">Câu {q["Câu số"]}:</span> {q["Câu hỏi"]}
-                {isEnglish(q["Câu hỏi"]) && (
+                <span className="question-number">Câu {q["Câu số"]}:</span>
+                {codeContent && (
+                  <pre className="code-block">
+                    <code>{codeContent}</code>
+                  </pre>
+                )}
+                {textContent && <div>{textContent}</div>}
+                {isEnglish(textContent || questionContent) && !isCode(questionContent) && (
                   <button
                     type="button"
                     className="translate-btn"
                     style={{ marginLeft: 8 }}
                     disabled={translating[qKey]}
-                    onClick={() => handleTranslate(qKey, q["Câu hỏi"])}
+                    onClick={() => handleTranslate(qKey, textContent || questionContent)}
                   >
                     {translating[qKey] ? "Đang dịch..." : "Dịch"}
                   </button>
@@ -282,8 +335,13 @@ function Quiz() {
                         onChange={() => handleChange(globalIdx, opt)}
                         disabled={isExam ? examSubmitted : showResult[globalIdx]}
                       />
-                      <span className="option-letter">{opt}.</span> {q[opt]}
-                      {isEnglish(q[opt]) && (
+                      <span className="option-letter">{opt}.</span>
+                      {isCode(q[opt]) ? (
+                        <pre className="code-block"><code>{formatCode(q[opt])}</code></pre>
+                      ) : (
+                        q[opt]
+                      )}
+                      {isEnglish(q[opt]) && !isCode(q[opt]) && (
                         <button
                           type="button"
                           className="translate-btn"
@@ -337,4 +395,4 @@ function Quiz() {
   );
 }
 
-export default Quiz; 
+export default Quiz;

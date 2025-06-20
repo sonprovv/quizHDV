@@ -5,7 +5,7 @@ import './App.css';
 
 function App() {
   return (
-    <div style={{ maxWidth: 600, margin: "0 auto", padding: 24, background: '#fff', borderRadius: 12, boxShadow: '0 2px 12px rgba(0,0,0,0.08)' }}>
+    <div style={{ padding: 24, background: '#fff', borderRadius: 12, boxShadow: '0 2px 12px rgba(0,0,0,0.08)' }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 16 }}>
         <img src={logo} alt="Logo" style={{ width: 80, height: 80, objectFit: 'contain', marginBottom: 8 }} />
         <h1 style={{ margin: 0, color: '#1976d2', fontWeight: 700 }}> Ôn tập hướng dịch vụ </h1>
