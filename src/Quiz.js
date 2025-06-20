@@ -1,19 +1,35 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "./firebase";
 import "./App.css";
 
 const PAGE_SIZE = 10;
 const GROUP_SIZE = 50;
+const EXAM_QUESTION_COUNT = 40;
+const EXAM_TIME = 20 * 60; // 20 phút (giây)
+
+function shuffleArray(array) {
+  const arr = array.slice();
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
 
 function Quiz() {
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
-  const [showResult, setShowResult] = useState({}); // Lưu trạng thái hiển thị đáp án từng câu
+  const [showResult, setShowResult] = useState({});
   const [page, setPage] = useState(0);
   const [mode, setMode] = useState(null); // Gói câu hỏi
   const [quizQuestions, setQuizQuestions] = useState([]); // Câu hỏi thực sự dùng cho quiz
   const [modes, setModes] = useState([]); // Danh sách các gói 50 câu
+  const [isExam, setIsExam] = useState(false);
+  const [examTimeLeft, setExamTimeLeft] = useState(EXAM_TIME);
+  const [examStarted, setExamStarted] = useState(false);
+  const [examSubmitted, setExamSubmitted] = useState(false);
+  const timerRef = useRef();
 
   useEffect(() => {
     async function fetchQuestions() {
@@ -43,16 +59,60 @@ function Quiz() {
   // Khi chọn mode, lấy số lượng câu hỏi tương ứng
   useEffect(() => {
     if (!mode || questions.length === 0) return;
-    const selected = questions.slice(mode.start, mode.end);
-    setQuizQuestions(selected);
-    setPage(0);
-    setAnswers({});
-    setShowResult({});
+    if (mode === "exam") {
+      // Lấy 40 câu ngẫu nhiên cho exam
+      const shuffled = shuffleArray(questions).slice(0, EXAM_QUESTION_COUNT);
+      setQuizQuestions(shuffled);
+      setIsExam(true);
+      setExamTimeLeft(EXAM_TIME);
+      setExamStarted(true);
+      setExamSubmitted(false);
+      setPage(0);
+      setAnswers({});
+      setShowResult({});
+    } else {
+      const selected = questions.slice(mode.start, mode.end);
+      setQuizQuestions(selected);
+      setIsExam(false);
+      setExamStarted(false);
+      setExamSubmitted(false);
+      setPage(0);
+      setAnswers({});
+      setShowResult({});
+    }
   }, [mode, questions]);
+
+  // Đếm ngược thời gian exam
+  useEffect(() => {
+    if (!isExam || !examStarted || examSubmitted) return;
+    timerRef.current = setInterval(() => {
+      setExamTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current);
+          setExamSubmitted(true);
+          // Hiện đáp án đúng/sai từng câu
+          const newShowResult = {};
+          for (let i = 0; i < quizQuestions.length; i++) newShowResult[i] = true;
+          setShowResult(newShowResult);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+    // eslint-disable-next-line
+  }, [isExam, examStarted, examSubmitted, quizQuestions.length]);
+
+  // Cuộn lên đầu trang khi chuyển trang
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [page]);
 
   const handleChange = (qIndex, value) => {
     setAnswers({ ...answers, [qIndex]: value });
-    setShowResult({ ...showResult, [qIndex]: true });
+    if (!isExam || examSubmitted) {
+      setShowResult({ ...showResult, [qIndex]: true });
+    }
   };
 
   // Đếm số câu đúng đã trả lời
@@ -61,13 +121,37 @@ function Quiz() {
     return acc;
   }, 0);
 
+  // Nộp bài exam
+  const handleExamSubmit = () => {
+    setExamSubmitted(true);
+    // Hiện đáp án đúng/sai từng câu
+    const newShowResult = {};
+    for (let i = 0; i < quizQuestions.length; i++) newShowResult[i] = true;
+    setShowResult(newShowResult);
+    clearInterval(timerRef.current);
+  };
+
+  // Hiển thị thời gian dạng mm:ss
+  const formatTime = (sec) => {
+    const m = Math.floor(sec / 60).toString().padStart(2, "0");
+    const s = (sec % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  };
+
   if (questions.length === 0) return <div className="loading">Đang tải câu hỏi...</div>;
 
   if (!mode) {
     return (
       <div className="quiz-form" style={{ textAlign: "center" }}>
-        <h2>Chọn gói câu hỏi (50 câu/gói)</h2>
+        <h2>Chọn gói câu hỏi (50 câu/gói hoặc Exam)</h2>
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 16, margin: "24px 0" }}>
+          <button
+            className="submit-btn"
+            style={{ minWidth: 160, background: '#d32f2f', color: '#fff', fontWeight: 700 }}
+            onClick={() => setMode("exam")}
+          >
+            Exam (40 câu/20 phút)
+          </button>
           {modes.map((m, idx) => (
             <button
               key={m.label}
@@ -104,6 +188,23 @@ function Quiz() {
             Đúng {correctCount}/{quizQuestions.length} câu
           </div>
         </div>
+        {isExam && (
+          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+            <span style={{ fontWeight: 600, color: examTimeLeft <= 60 ? '#d32f2f' : '#1976d2', fontSize: 20 }}>
+              ⏰ Thời gian còn lại: {formatTime(examTimeLeft)}
+            </span>
+            {!examSubmitted && (
+              <button
+                className="submit-btn"
+                style={{ marginLeft: 24, background: '#1976d2', color: '#fff' }}
+                onClick={handleExamSubmit}
+                type="button"
+              >
+                Nộp bài
+              </button>
+            )}
+          </div>
+        )}
         {currentQuestions.map((q, idx) => {
           const globalIdx = startIdx + idx;
           return (
@@ -131,14 +232,14 @@ function Quiz() {
                         value={opt}
                         checked={answers[globalIdx] === opt}
                         onChange={() => handleChange(globalIdx, opt)}
-                        disabled={showResult[globalIdx]}
+                        disabled={isExam ? examSubmitted : showResult[globalIdx]}
                       />
                       <span className="option-letter">{opt}.</span> {q[opt]}
                     </label>
                   );
                 })}
               </div>
-              {showResult[globalIdx] && (
+              {((!isExam && showResult[globalIdx]) || (isExam && examSubmitted && showResult[globalIdx])) && (
                 <div className="result-inline">
                   {answers[globalIdx] === q["Đáp án đúng"] ? (
                     <span className="result-correct">✔ Đúng</span>
